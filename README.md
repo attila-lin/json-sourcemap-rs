@@ -26,5 +26,7 @@ fn main() {
     let map = json_sourcemap::parse(json, options).unwrap();
 
     println!("{:?}", map);
+
+    println!("{:?}", map.get_location("/foo"));
 }
 ```
