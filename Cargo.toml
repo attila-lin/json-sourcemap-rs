@@ -4,7 +4,14 @@ version = "0.1.0"
 edition = "2021"
 authors = ["attila-lin <linyiyu1992@gmail.com>"]
 
+[features]
+default = []
+
+serde = ["dep:serde"]
+
 [dependencies]
 once_cell = "1.17.1"
 serde_json = { version = "1.0.94", features = ["arbitrary_precision"] }
 thiserror = "1.0.38"
+
+serde = { version = "1.0.130", optional = true, features = ["derive"] }

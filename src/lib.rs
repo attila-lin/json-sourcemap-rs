@@ -19,15 +19,17 @@ const ESCAPED_CHARS: Lazy<HashMap<char, &'static str>> = Lazy::new(|| {
 });
 
 /// The json-source-map error type
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, thiserror::Error, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum Error {
     #[error("Unexpected end of JSON input")]
     UnexpectedEof,
     #[error("Unexpected token: {0} in JSON at position {1}")]
-    UnexpectedToken(String, usize),
+    UnexpectedToken(char, usize),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Location {
     pub line: usize,
     pub column: usize,
@@ -36,12 +38,14 @@ pub struct Location {
 
 /// The parse options
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Options {
     /// Whether to allow big integers
     pub bigint: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum Prop {
     Key,
     KeyEnd,
@@ -73,8 +77,8 @@ impl ParseResult {
         self.pointers.get(ptr)
     }
 }
-
-type LocationMap = HashMap<Prop, Location>;
+/// The location information of the json pointer
+pub type LocationMap = HashMap<Prop, Location>;
 
 impl Parser {
     fn new(source: &str, options: Options) -> Self {
@@ -109,11 +113,13 @@ impl Parser {
             '[' => Value::Array(self.parse_array(ptr)?),
             '{' => self.parse_object(ptr)?,
             '-' | '0'..='9' => Value::Number(self.parse_number()?),
-            _ => return Err(Error::UnexpectedToken(c.to_string(), self.pos)),
+            _ => return Err(Error::UnexpectedToken(c, self.pos)),
         };
         self.map(ptr, Prop::ValueEnd);
+        // dbg!("?");
         self.whitespace();
-        if top_level && self.pos < self.source.len() {
+        // dbg!("? ?", top_level);
+        if top_level && self.pos == self.source.len() {
             return Err(self.unexpected_token());
         }
 
@@ -135,7 +141,7 @@ impl Parser {
                 }
                 self.pos += 1;
             }
-            dbg!(1);
+            // dbg!(1);
         }
     }
 
@@ -158,7 +164,7 @@ impl Parser {
                     s.push(c);
                 }
             }
-            dbg!(2);
+            // dbg!(2);
         }
         Ok(s)
     }
@@ -225,7 +231,7 @@ impl Parser {
                 return Err(self.unexpected_token());
             }
             self.whitespace();
-            dbg!(3);
+            // dbg!(3);
         }
 
         Ok(array)
@@ -265,7 +271,6 @@ impl Parser {
             }
 
             self.whitespace();
-            dbg!(4);
         }
         Ok(object.into())
     }
@@ -282,7 +287,7 @@ impl Parser {
     #[inline]
     fn get_char(&mut self) -> Result<char, Error> {
         self.check_unexpected_eof()?;
-        let c = self.source.chars().nth(self.pos).unwrap();
+        let c = self.next();
         self.pos += 1;
         self.column += 1;
         Ok(c)
@@ -290,7 +295,10 @@ impl Parser {
 
     #[inline]
     fn next(&self) -> char {
-        self.source.chars().nth(self.pos).unwrap()
+        self.source
+            .chars()
+            .nth(self.pos)
+            .expect(&format!("Unexpected EOF, index: {}", self.pos))
     }
 
     /// Backs up the parser one character.
@@ -305,7 +313,7 @@ impl Parser {
         for _ in 0..count {
             let c = self.get_char()?;
             if !c.is_ascii_hexdigit() {
-                return Err(Error::UnexpectedToken(c.to_string(), self.pos));
+                return Err(Error::UnexpectedToken(c, self.pos));
             }
             code.push(c);
         }
@@ -322,7 +330,7 @@ impl Parser {
             } else {
                 break;
             }
-            dbg!(5);
+            // dbg!(5);
         }
         Ok(digits)
     }
@@ -347,7 +355,7 @@ impl Parser {
     }
 
     fn unexpected_token(&self) -> Error {
-        Error::UnexpectedToken(self.next().to_string(), self.pos)
+        Error::UnexpectedToken(self.next(), self.pos)
     }
 
     fn was_unexpected_token(&mut self) -> Error {
@@ -464,6 +472,29 @@ mod tests {
                 line: 1,
                 column: 14,
                 pos: 16
+            }
+        );
+
+        let source = r#"{
+            "name": "John",
+            "age": 30.0
+        }"#;
+        let res = parse(source, Options::default()).unwrap();
+        assert!(res.value.is_object());
+        assert_eq!(
+            res.pointers["/age"][&Prop::Value],
+            Location {
+                line: 2,
+                column: 19,
+                pos: 49
+            }
+        );
+        assert_eq!(
+            res.pointers["/age"][&Prop::ValueEnd],
+            Location {
+                line: 2,
+                column: 23,
+                pos: 53
             }
         );
     }
