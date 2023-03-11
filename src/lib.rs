@@ -157,17 +157,22 @@ impl Parser {
         self.map(ptr, Prop::ValueEnd);
         // dbg!("?");
         self.whitespace();
-        // dbg!("? ?", top_level, self.pos, self.source.len());
-        if top_level && self.pos < self.source.len() {
+        // dbg!("? ?", top_level, self.pos, self.len());
+        if top_level && self.pos < self.len() {
             return Err(self.unexpected_token());
         }
 
         Ok(data)
     }
 
+    #[inline]
+    fn len(&self) -> usize {
+        self.source.chars().count()
+    }
+
     fn whitespace(&mut self) {
         'outer: {
-            while self.pos < self.source.len() {
+            while self.pos < self.len() {
                 match self.source.chars().nth(self.pos) {
                     Some(' ') => self.column += 1,
                     Some('\t') => self.column += 4,
@@ -337,7 +342,7 @@ impl Parser {
         self.source
             .chars()
             .nth(self.pos)
-            .expect(&format!("Unexpected EOF, index: {}", self.pos))
+            .expect(&format!("Unexpected EOF, pos: {}", self.pos))
     }
 
     /// Backs up the parser one character.
@@ -404,7 +409,7 @@ impl Parser {
     }
 
     fn check_unexpected_eof(&self) -> Result<(), Error> {
-        if self.pos >= self.source.len() {
+        if self.pos >= self.len() {
             return Err(Error::UnexpectedEof);
         }
 
@@ -636,6 +641,26 @@ mod tests {
         assert_eq!(
             res.value,
             serde_json::from_str::<serde_json::Value>(source).unwrap()
+        );
+
+        let source = r#"{"chinese":"你好"}"#;
+        let res = parse(source, Options::default()).unwrap();
+        assert!(res.value.is_object());
+        assert_eq!(
+            res.pointers["/chinese"].value(),
+            Location {
+                line: 0,
+                column: 11,
+                pos: 11
+            }
+        );
+        assert_eq!(
+            res.pointers["/chinese"].value_end(),
+            Location {
+                line: 0,
+                column: 15,
+                pos: 15
+            }
         );
     }
 }
