@@ -26,6 +26,10 @@ pub enum Error {
     UnexpectedEof,
     #[error("Unexpected token: {0} in JSON at position {1}")]
     UnexpectedToken(char, usize),
+    #[error("Convert to unicode codepoint failed")]
+    Int,
+    #[error("Invalid unicode codepoint: {0} at position {1}")]
+    InvalidUnicodeCodePoint(u32, usize),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
@@ -55,6 +59,7 @@ pub enum Prop {
 
 struct Parser {
     source: String,
+    #[allow(dead_code)]
     options: Options,
 
     line: usize,
@@ -77,8 +82,42 @@ impl ParseResult {
         self.pointers.get(ptr)
     }
 }
+
 /// The location information of the json pointer
-pub type LocationMap = HashMap<Prop, Location>;
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct LocationMap(HashMap<Prop, Location>);
+
+impl LocationMap {
+    /// Get the location of the property
+    pub fn get(&self, prop: Prop) -> Option<Location> {
+        self.0.get(&prop).cloned()
+    }
+
+    fn insert(&mut self, prop: Prop, loc: Location) {
+        self.0.insert(prop, loc);
+    }
+
+    /// Get the start location of the json pointer's value
+    pub fn value(&self) -> Location {
+        self.get(Prop::Value).unwrap()
+    }
+
+    /// Get the start location of the json pointer's key
+    pub fn key(&self) -> Location {
+        self.get(Prop::Key).unwrap()
+    }
+
+    /// Get the end location of the json pointer's value
+    pub fn value_end(&self) -> Location {
+        self.get(Prop::ValueEnd).unwrap()
+    }
+
+    /// Get the end location of the json pointer's key
+    pub fn key_end(&self) -> Location {
+        self.get(Prop::KeyEnd).unwrap()
+    }
+}
 
 impl Parser {
     fn new(source: &str, options: Options) -> Self {
@@ -118,8 +157,8 @@ impl Parser {
         self.map(ptr, Prop::ValueEnd);
         // dbg!("?");
         self.whitespace();
-        // dbg!("? ?", top_level);
-        if top_level && self.pos == self.source.len() {
+        // dbg!("? ?", top_level, self.pos, self.source.len());
+        if top_level && self.pos < self.source.len() {
             return Err(self.unexpected_token());
         }
 
@@ -155,7 +194,7 @@ impl Parser {
                     if let Some(escaped) = ESCAPED_CHARS.get(&c) {
                         s.push_str(escaped);
                     } else if c == 'u' {
-                        s.push_str(&self.get_char_code()?);
+                        s.push(self.get_char_code()?);
                     } else {
                         return Err(self.was_unexpected_token());
                     }
@@ -173,7 +212,7 @@ impl Parser {
         self.back_char();
 
         let mut num_str = String::new();
-        let mut is_integer = true;
+        // let mut is_integer = true;
         if self.next() == '-' {
             num_str.push(self.get_char()?);
         }
@@ -186,13 +225,13 @@ impl Parser {
         num_str = num_str + &next;
 
         if self.next() == '.' {
-            is_integer = false;
+            // is_integer = false;
             num_str.push(self.get_char()?);
             num_str = num_str + &self.get_digits()?;
         }
 
         if self.next() == 'e' || self.next() == 'E' {
-            is_integer = false;
+            // is_integer = false;
             num_str.push(self.get_char()?);
             if self.next() == '-' || self.next() == '+' {
                 num_str.push(self.get_char()?);
@@ -307,7 +346,7 @@ impl Parser {
         self.column -= 1;
     }
 
-    fn get_char_code(&mut self) -> Result<String, Error> {
+    fn get_char_code(&mut self) -> Result<char, Error> {
         let count = 4;
         let mut code = String::new();
         for _ in 0..count {
@@ -318,7 +357,8 @@ impl Parser {
             code.push(c);
         }
 
-        Ok(code)
+        let unicode = u32::from_str_radix(&code, 16).map_err(|_| Error::Int)?;
+        char::from_u32(unicode).ok_or_else(|| Error::InvalidUnicodeCodePoint(unicode, self.pos))
     }
 
     fn get_digits(&mut self) -> Result<String, Error> {
@@ -342,7 +382,7 @@ impl Parser {
     fn map_location(&mut self, ptr: impl ToString, prop: Prop, loc: Location) {
         self.pointers
             .entry(ptr.to_string())
-            .or_insert_with(|| HashMap::new())
+            .or_insert_with(|| LocationMap(HashMap::new()))
             .insert(prop, loc);
     }
 
@@ -404,7 +444,7 @@ mod tests {
         let res = parse(source, Options::default()).unwrap();
         assert!(res.value.is_object());
         assert_eq!(
-            res.pointers["/name"][&Prop::Key],
+            res.pointers["/name"].key(),
             Location {
                 line: 1,
                 column: 12,
@@ -412,12 +452,16 @@ mod tests {
             }
         );
         assert_eq!(
-            res.pointers["/name"][&Prop::KeyEnd],
+            res.pointers["/name"].key_end(),
             Location {
                 line: 1,
                 column: 18,
                 pos: 20
             }
+        );
+        assert_eq!(
+            res.value,
+            serde_json::from_str::<serde_json::Value>(source).unwrap()
         );
 
         let source = r#"{
@@ -426,7 +470,7 @@ mod tests {
         let res = parse(source, Options::default()).unwrap();
         assert!(res.value.is_object());
         assert_eq!(
-            res.pointers[""][&Prop::Value],
+            res.pointers[""].value(),
             Location {
                 line: 0,
                 column: 0,
@@ -434,7 +478,7 @@ mod tests {
             }
         );
         assert_eq!(
-            res.pointers[""][&Prop::ValueEnd],
+            res.pointers[""].value_end(),
             Location {
                 line: 2,
                 column: 1,
@@ -443,7 +487,7 @@ mod tests {
         );
 
         assert_eq!(
-            res.pointers["/foo"][&Prop::Key],
+            res.pointers["/foo"].key(),
             Location {
                 line: 1,
                 column: 2,
@@ -451,7 +495,7 @@ mod tests {
             }
         );
         assert_eq!(
-            res.pointers["/foo"][&Prop::KeyEnd],
+            res.pointers["/foo"].key_end(),
             Location {
                 line: 1,
                 column: 7,
@@ -459,7 +503,7 @@ mod tests {
             }
         );
         assert_eq!(
-            res.pointers["/foo"][&Prop::Value],
+            res.pointers["/foo"].value(),
             Location {
                 line: 1,
                 column: 9,
@@ -467,12 +511,16 @@ mod tests {
             }
         );
         assert_eq!(
-            res.pointers["/foo"][&Prop::ValueEnd],
+            res.pointers["/foo"].value_end(),
             Location {
                 line: 1,
                 column: 14,
                 pos: 16
             }
+        );
+        assert_eq!(
+            res.value,
+            serde_json::from_str::<serde_json::Value>(source).unwrap()
         );
 
         let source = r#"{
@@ -482,7 +530,7 @@ mod tests {
         let res = parse(source, Options::default()).unwrap();
         assert!(res.value.is_object());
         assert_eq!(
-            res.pointers["/age"][&Prop::Value],
+            res.pointers["/age"].value(),
             Location {
                 line: 2,
                 column: 19,
@@ -490,12 +538,104 @@ mod tests {
             }
         );
         assert_eq!(
-            res.pointers["/age"][&Prop::ValueEnd],
+            res.pointers["/age"].value_end(),
             Location {
                 line: 2,
                 column: 23,
                 pos: 53
             }
+        );
+        assert_eq!(
+            res.value,
+            serde_json::from_str::<serde_json::Value>(source).unwrap()
+        );
+
+        let source = r#"{"number":1.23e+10000}"#;
+        let res = parse(source, Options::default()).unwrap();
+        assert!(res.value.is_object());
+        assert_eq!(
+            res.pointers["/number"].value(),
+            Location {
+                line: 0,
+                column: 10,
+                pos: 10
+            }
+        );
+        assert_eq!(
+            res.pointers["/number"].value_end(),
+            Location {
+                line: 0,
+                column: 21,
+                pos: 21
+            }
+        );
+
+        let source = r#"{"number":-1.23e-10000}"#;
+        let res = parse(source, Options::default()).unwrap();
+        assert!(res.value.is_object());
+        assert_eq!(
+            res.pointers["/number"].value(),
+            Location {
+                line: 0,
+                column: 10,
+                pos: 10
+            }
+        );
+        assert_eq!(
+            res.pointers["/number"].value_end(),
+            Location {
+                line: 0,
+                column: 22,
+                pos: 22
+            }
+        );
+
+        let source = r#"{"number":-0.0}"#;
+        let res = parse(source, Options::default()).unwrap();
+        assert!(res.value.is_object());
+        assert_eq!(
+            res.pointers["/number"].value(),
+            Location {
+                line: 0,
+                column: 10,
+                pos: 10
+            }
+        );
+        assert_eq!(
+            res.pointers["/number"].value_end(),
+            Location {
+                line: 0,
+                column: 14,
+                pos: 14
+            }
+        );
+        assert_eq!(
+            res.value,
+            serde_json::from_str::<serde_json::Value>(source).unwrap()
+        );
+
+        let source = r#"{"code":"\u0020"}"#;
+        let res = parse(source, Options::default()).unwrap();
+        assert!(res.value.is_object());
+        assert_eq!(
+            res.pointers["/code"].value(),
+            Location {
+                line: 0,
+                column: 8,
+                pos: 8
+            }
+        );
+        assert_eq!(
+            res.pointers["/code"].value_end(),
+            Location {
+                line: 0,
+                column: 16,
+                pos: 16
+            }
+        );
+        assert_eq!(
+            res.value,
+            serde_json::from_str::<serde_json::Value>(source).unwrap()
         );
     }
 }

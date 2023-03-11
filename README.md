@@ -27,6 +27,9 @@ fn main() {
 
     println!("{:?}", map);
 
-    println!("{:?}", map.get_location("/foo"));
+    println!("{:?}", map.get_location("/foo").unwrap());
+
+    let locs = map.get_location("/baz").unwrap();
+    println!("{:?}", locs.key())
 }
 ```
