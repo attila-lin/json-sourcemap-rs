@@ -3,6 +3,7 @@ name = "json-sourcemap"
 version = "0.1.0"
 edition = "2021"
 authors = ["attila-lin <linyiyu1992@gmail.com>"]
+description = "A library for parsing and generating JSON sourcemaps"
 documentation = "https://docs.rs/json-sourcemap/"
 repository = "https://github.com/attila-lin/json-sourcemap-rs"
 homepage = "https://github.com/attila-lin/json-sourcemap-rs"
