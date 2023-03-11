@@ -6,6 +6,10 @@ authors = ["attila-lin <linyiyu1992@gmail.com>"]
 documentation = "https://docs.rs/json-sourcemap/"
 repository = "https://github.com/attila-lin/json-sourcemap-rs"
 homepage = "https://github.com/attila-lin/json-sourcemap-rs"
+readme = "README.md"
+license = "MIT OR Apache-2.0"
+categories = ["parsing"]
+exclude = ["/.vscode"]
 
 [features]
 default = []
