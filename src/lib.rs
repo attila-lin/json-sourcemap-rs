@@ -58,7 +58,7 @@ pub enum Prop {
 }
 
 struct Parser {
-    source: String,
+    chars: Vec<char>,
     #[allow(dead_code)]
     options: Options,
 
@@ -121,8 +121,9 @@ impl LocationMap {
 
 impl Parser {
     fn new(source: &str, options: Options) -> Self {
+        let chars = source.chars().collect();
         Parser {
-            source: source.to_string(),
+            chars,
             options,
             line: 0,
             column: 0,
@@ -167,13 +168,13 @@ impl Parser {
 
     #[inline]
     fn len(&self) -> usize {
-        self.source.chars().count()
+        self.chars.len()
     }
 
     fn whitespace(&mut self) {
         'outer: {
             while self.pos < self.len() {
-                match self.source.chars().nth(self.pos) {
+                match self.chars.get(self.pos) {
                     Some(' ') => self.column += 1,
                     Some('\t') => self.column += 4,
                     Some('\r') => self.column = 0,
@@ -339,10 +340,10 @@ impl Parser {
 
     #[inline]
     fn next(&self) -> char {
-        self.source
-            .chars()
-            .nth(self.pos)
+        self.chars
+            .get(self.pos)
             .expect(&format!("Unexpected EOF, pos: {}", self.pos))
+            .clone()
     }
 
     /// Backs up the parser one character.
