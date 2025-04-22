@@ -8,7 +8,7 @@ Add this to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-json-sourcemap = "0.1"
+json-sourcemap = "0.2"
 ```
 
 ## Example
