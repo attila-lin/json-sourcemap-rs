@@ -1,7 +1,7 @@
 [package]
 name = "json-sourcemap"
-version = "0.1.2"
-edition = "2021"
+version = "0.2.0"
+edition = "2024"
 authors = ["attila-lin <linyiyu1992@gmail.com>"]
 description = "A library for parsing and generating JSON sourcemaps"
 documentation = "https://docs.rs/json-sourcemap/"
@@ -18,8 +18,7 @@ default = []
 serde = ["dep:serde"]
 
 [dependencies]
-once_cell = "1.17.1"
 serde_json = { version = "1.0.94", features = ["arbitrary_precision"] }
-thiserror = "1.0.38"
+thiserror = "2.0.12"
 
 serde = { version = "1.0.130", optional = true, features = ["derive"] }

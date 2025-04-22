@@ -16,7 +16,7 @@ json-sourcemap = "0.1"
 ```rust
 use json_sourcemap::Options;
 
-fn main() {
+// fn main() {
     let json = r#"{
         "foo": "bar",
         "baz": 42
@@ -31,5 +31,5 @@ fn main() {
 
     let locs = map.get_location("/baz").unwrap();
     println!("{:?}", locs.key())
-}
+// }
 ```

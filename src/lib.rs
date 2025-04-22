@@ -1,11 +1,11 @@
 #![doc = include_str!("../README.md")]
 
 use std::collections::HashMap;
+use std::sync::LazyLock;
 
-use once_cell::sync::Lazy;
 use serde_json::{Number, Value};
 
-const ESCAPED_CHARS: Lazy<HashMap<char, &'static str>> = Lazy::new(|| {
+static ESCAPED_CHARS: LazyLock<HashMap<char, &'static str>> = LazyLock::new(|| {
     let mut map = HashMap::new();
     map.insert('b', r"\b");
     map.insert('f', r"\f");
@@ -205,7 +205,7 @@ impl Parser {
                         return Err(self.was_unexpected_token());
                     }
                 }
-                c @ _ => {
+                c => {
                     s.push(c);
                 }
             }
@@ -340,10 +340,10 @@ impl Parser {
 
     #[inline]
     fn next(&self) -> char {
-        self.chars
+        *self
+            .chars
             .get(self.pos)
-            .expect(&format!("Unexpected EOF, pos: {}", self.pos))
-            .clone()
+            .unwrap_or_else(|| panic!("Unexpected EOF, pos: {}", self.pos))
     }
 
     /// Backs up the parser one character.
@@ -364,7 +364,7 @@ impl Parser {
         }
 
         let unicode = u32::from_str_radix(&code, 16).map_err(|_| Error::Int)?;
-        char::from_u32(unicode).ok_or_else(|| Error::InvalidUnicodeCodePoint(unicode, self.pos))
+        char::from_u32(unicode).ok_or(Error::InvalidUnicodeCodePoint(unicode, self.pos))
     }
 
     fn get_digits(&mut self) -> Result<String, Error> {
